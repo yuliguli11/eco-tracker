@@ -134,6 +134,7 @@ function toggleCollapse() {
 }
 
 function resetSession() {
+  nodeTokens.clear();
   session.inputTokens  = 0;
   session.outputTokens = 0;
   session.messageCount = 0;
@@ -192,97 +193,98 @@ function makeDraggable(el) {
   });
 }
 
-// ── Message observer ──────────────────────────────────────────────────────────
+// ── Selector catalogue ────────────────────────────────────────────────────────
+// Tried in order; first selector that returns nodes wins for that role.
+// Covers multiple claude.ai DOM layouts observed across 2024–2025.
 
-const seenMessages = new Set();
+const INPUT_SELECTORS = [
+  '[data-testid="human-turn"]',
+  '[data-testid="user-message"]',
+  '[class*="human-turn"]',
+  '[class*="HumanTurn"]',
+];
 
-function scanMessages() {
-  // Claude.ai renders human turns as [data-testid="human-turn"] and
-  // assistant turns as [data-testid="assistant-turn"] (observed as of 2025).
-  // Fallback: look for role attributes used in older layouts.
-  const humanTurns     = document.querySelectorAll('[data-testid="human-turn"]');
-  const assistantTurns = document.querySelectorAll('[data-testid="assistant-turn"]');
+const OUTPUT_SELECTORS = [
+  '[data-testid="assistant-turn"]',
+  '[data-testid="ai-message"]',
+  '[class*="assistant-turn"]',
+  '[class*="AssistantTurn"]',
+];
 
-  let newInput  = 0;
-  let newOutput = 0;
-  let newMsgs   = 0;
-
-  humanTurns.forEach((node) => {
-    const key = 'h:' + (node.dataset.index || nodeFingerprint(node));
-    if (seenMessages.has(key)) return;
-    seenMessages.add(key);
-    newInput += charsToTokens(node.innerText);
-    newMsgs++;
-  });
-
-  assistantTurns.forEach((node) => {
-    const key = 'a:' + (node.dataset.index || nodeFingerprint(node));
-    if (seenMessages.has(key)) return;
-    seenMessages.add(key);
-    newOutput += charsToTokens(node.innerText);
-    newMsgs++;
-  });
-
-  if (newInput > 0 || newOutput > 0) {
-    session.inputTokens  += newInput;
-    session.outputTokens += newOutput;
-    session.messageCount += newMsgs;
-    updateWidget();
+function queryAll(selectors) {
+  const seen = new Set();
+  const results = [];
+  for (const sel of selectors) {
+    try {
+      document.querySelectorAll(sel).forEach((n) => {
+        if (!seen.has(n)) { seen.add(n); results.push(n); }
+      });
+    } catch (_) { /* invalid selector — skip */ }
   }
+  return results;
 }
 
-function nodeFingerprint(node) {
-  // Stable enough key: truncated text + child count
-  return (node.innerText || '').slice(0, 80) + '|' + node.children.length;
-}
+// ── Delta-based message tracker ───────────────────────────────────────────────
+//
+// Map<Element, number> — how many tokens we have already counted for each node.
+// On every scan we compute (current − previous) and add only the new tokens.
+// This handles both fully-loaded messages and live-streaming responses with a
+// single, unified code path — no fingerprints, no separate streaming tracker.
 
-// ── Streaming output tracker ──────────────────────────────────────────────────
-// For streaming responses we watch the active assistant turn and update live.
+const nodeTokens = new Map();
 
-let streamingNode = null;
-let streamingKey  = null;
-let streamingPrev = 0;
+function scan() {
+  const inputNodes  = queryAll(INPUT_SELECTORS);
+  const outputNodes = queryAll(OUTPUT_SELECTORS);
 
-function watchStreaming() {
-  // The last assistant-turn element is the one currently streaming.
-  const turns = document.querySelectorAll('[data-testid="assistant-turn"]');
-  if (!turns.length) return;
-  const last = turns[turns.length - 1];
-  const key  = 'stream:' + nodeFingerprint(last);
+  let changed = false;
 
-  if (key !== streamingKey) {
-    streamingKey  = key;
-    streamingNode = last;
-    streamingPrev = 0;
+  function processNodes(nodes, role) {
+    for (const node of nodes) {
+      const current = charsToTokens(node.innerText);
+      const prev    = nodeTokens.get(node) ?? -1;
+      if (current === prev) continue;
+
+      if (prev === -1) {
+        // Brand-new node — count all its tokens and record the message
+        session.messageCount++;
+      }
+      const delta = current - Math.max(prev, 0);
+      if (delta > 0) {
+        if (role === 'input')  session.inputTokens  += delta;
+        else                   session.outputTokens += delta;
+        nodeTokens.set(node, current);
+        changed = true;
+      }
+    }
   }
 
-  const currentTokens = charsToTokens(last.innerText);
-  const delta = currentTokens - streamingPrev;
-  if (delta > 0) {
-    streamingPrev = currentTokens;
-    session.outputTokens += delta;
-    updateWidget();
-  }
+  processNodes(inputNodes,  'input');
+  processNodes(outputNodes, 'output');
+
+  if (changed) updateWidget();
 }
 
 // ── MutationObserver ──────────────────────────────────────────────────────────
 
 let scanTimer = null;
 
-function scheduleScans() {
+function scheduleScan() {
   clearTimeout(scanTimer);
-  scanTimer = setTimeout(() => {
-    scanMessages();
-    watchStreaming();
-  }, 300);
+  // Short debounce so rapid character-by-character streaming batches into one scan
+  scanTimer = setTimeout(scan, 200);
 }
 
-const observer = new MutationObserver(scheduleScans);
+// Always watch document.body — more reliable than trying to find <main> early
+const observer = new MutationObserver(scheduleScan);
 
 function startObserving() {
-  const root = document.querySelector('main') || document.body;
-  observer.observe(root, { childList: true, subtree: true, characterData: true });
+  observer.observe(document.body, { childList: true, subtree: true, characterData: true });
 }
+
+// Periodic backstop: catches any mutations the observer might have missed
+// (e.g. cross-origin iframes, delayed hydration)
+setInterval(scan, 2000);
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
@@ -290,7 +292,7 @@ function init() {
   if (document.getElementById('eco-tracker-widget')) return;
   widgetEl = buildWidget();
   startObserving();
-  scanMessages();
+  scan(); // pick up any messages already in the DOM
 }
 
 if (document.readyState === 'loading') {
@@ -299,14 +301,19 @@ if (document.readyState === 'loading') {
   init();
 }
 
-// Re-init on SPA navigation (claude.ai is a Next.js SPA)
+// ── SPA navigation handler ────────────────────────────────────────────────────
+// claude.ai is a Next.js SPA — URL changes without a full page reload.
+// On navigation: clear the node-token map so stale element refs are released
+// and any messages in the new conversation are counted fresh.
+
 let lastUrl = location.href;
 new MutationObserver(() => {
-  if (location.href !== lastUrl) {
-    lastUrl = location.href;
-    // Keep the widget but clear seen-message cache for the new conversation
-    seenMessages.clear();
-    streamingKey  = null;
-    streamingPrev = 0;
-  }
+  if (location.href === lastUrl) return;
+  lastUrl = location.href;
+  nodeTokens.clear();
+  session.inputTokens  = 0;
+  session.outputTokens = 0;
+  session.messageCount = 0;
+  // Give the SPA a moment to render the new conversation before scanning
+  setTimeout(scan, 500);
 }).observe(document, { subtree: true, childList: true });
