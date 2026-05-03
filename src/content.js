@@ -1,23 +1,22 @@
 /**
  * Eco Tracker — content script injected into claude.ai
  *
- * Environmental estimates are derived from published LLM inference research:
- *   Energy:  ~0.002 kWh per 1K tokens (inference, server-side)
- *   Water:   ~10 mL per 1K tokens  (data-centre cooling, US avg)
- *   CO₂:     ~0.47 g per 1K tokens  (0.233 kg CO₂/kWh × 0.002 kWh × 1000 g/kg)
+ * Environmental estimates (LLM inference research):
+ *   Energy:  ~0.002 kWh / 1K tokens
+ *   Water:   ~10 mL / 1K tokens  (data-centre cooling)
+ *   CO₂:     ~0.47 g / 1K tokens  (US grid avg, 0.233 kg CO₂/kWh)
  *
- * Pricing (Claude claude-sonnet-4-6 as default approximation):
- *   Input:  $3.00 / 1M tokens
- *   Output: $15.00 / 1M tokens
+ * Pricing approximation (Claude claude-sonnet-4-6):
+ *   Input $3.00 / 1M tokens · Output $15.00 / 1M tokens
  *
- * Token estimation: 1 token ≈ 4 characters (GPT/Claude tokeniser average)
+ * Token estimation: ~4 characters per token
  */
 
 const ENV = {
-  energyPerKToken: 0.002,   // kWh
-  waterPerKToken:  10,       // mL
-  co2PerKToken:    0.47,     // g
-  inputCostPerMToken:  3.00, // USD
+  energyPerKToken: 0.002,
+  waterPerKToken:  10,
+  co2PerKToken:    0.47,
+  inputCostPerMToken:  3.00,
   outputCostPerMToken: 15.00,
 };
 
@@ -27,10 +26,11 @@ const session = {
   messageCount: 0,
 };
 
-let widgetEl = null;
+let widgetEl  = null;
 let collapsed = false;
+let funMode   = false;
 
-// ── Token estimation ─────────────────────────────────────────────────────────
+// ── Token estimation ──────────────────────────────────────────────────────────
 
 function charsToTokens(text) {
   return Math.ceil((text || '').length / 4);
@@ -49,7 +49,7 @@ function calcImpact(inputTok, outputTok) {
   };
 }
 
-// ── Formatting helpers ────────────────────────────────────────────────────────
+// ── Raw formatters ────────────────────────────────────────────────────────────
 
 function fmtEnergy(kWh) {
   if (kWh < 0.001) return `${(kWh * 1e6).toFixed(1)} μWh`;
@@ -71,8 +71,41 @@ function fmtCO2(g) {
 
 function fmtCost(usd) {
   if (usd < 0.0001) return `< $0.0001`;
-  if (usd < 0.01)   return `$${usd.toFixed(4)}`;
   return `$${usd.toFixed(4)}`;
+}
+
+// ── Fun formatters ────────────────────────────────────────────────────────────
+// Cost    → ☕ coffees at $5 each
+// Energy  → 💡 minutes a 10W LED was on (0.01 kWh/hr)
+// Water   → 🍶 500 mL bottles
+// CO₂     → 🚗 miles driven (avg US car: ~404 g CO₂/mile)
+
+function fmtFunCost(usd) {
+  const n = usd / 5;
+  if (n < 0.001) return '< 0.001 coffees';
+  return `${n.toFixed(3)} coffees`;
+}
+
+function fmtFunEnergy(kWh) {
+  const minutes = kWh / 0.01 * 60; // 10 W LED → 0.01 kWh/hr
+  if (minutes < 1)    return `${(minutes * 60).toFixed(0)}s of light`;
+  if (minutes < 60)   return `${minutes.toFixed(1)} min lit`;
+  return `${(minutes / 60).toFixed(2)} hrs lit`;
+}
+
+function fmtFunWater(mL) {
+  const bottles = mL / 500;
+  if (bottles < 0.001) return '< 0.001 bottles';
+  return `${bottles.toFixed(3)} bottles`;
+}
+
+function fmtFunCO2(g) {
+  const miles = g / 404;
+  if (miles < 0.01) {
+    const feet = miles * 5280;
+    return `${feet.toFixed(1)} ft driven`;
+  }
+  return `${miles.toFixed(3)} mi driven`;
 }
 
 // ── Widget DOM ────────────────────────────────────────────────────────────────
@@ -82,53 +115,58 @@ function buildWidget() {
   el.id = 'eco-tracker-widget';
   el.innerHTML = `
     <div id="eco-tracker-header">
-      <span id="eco-tracker-title">
-        <span class="eco-leaf">🌿</span> Eco Tracker
-      </span>
+      <span id="eco-tracker-title">🌿 eco</span>
       <div id="eco-tracker-controls">
+        <button id="eco-mode-btn" title="Switch view">✦ fun</button>
         <button id="eco-tracker-reset" title="Reset session">↺</button>
-        <button id="eco-tracker-toggle" title="Collapse">−</button>
+        <button id="eco-tracker-collapse" title="Collapse">−</button>
       </div>
     </div>
     <div id="eco-tracker-body">
-      <div class="eco-row" id="eco-row-cost">
-        <span class="eco-icon">💰</span>
-        <span class="eco-label">Cost</span>
-        <span class="eco-value" id="eco-val-cost">$0.0000</span>
+      <div class="eco-row">
+        <span class="eco-row-icon" id="eco-icon-cost">💰</span>
+        <span class="eco-row-val" id="eco-val-cost">$0.0000</span>
       </div>
-      <div class="eco-row" id="eco-row-energy">
-        <span class="eco-icon">⚡</span>
-        <span class="eco-label">Energy</span>
-        <span class="eco-value" id="eco-val-energy">0 Wh</span>
+      <div class="eco-row">
+        <span class="eco-row-icon" id="eco-icon-energy">⚡</span>
+        <span class="eco-row-val" id="eco-val-energy">0 Wh</span>
       </div>
-      <div class="eco-row" id="eco-row-water">
-        <span class="eco-icon">💧</span>
-        <span class="eco-label">Water</span>
-        <span class="eco-value" id="eco-val-water">0 mL</span>
+      <div class="eco-row">
+        <span class="eco-row-icon" id="eco-icon-water">💧</span>
+        <span class="eco-row-val" id="eco-val-water">0 mL</span>
       </div>
-      <div class="eco-row" id="eco-row-co2">
-        <span class="eco-icon">☁️</span>
-        <span class="eco-label">CO₂</span>
-        <span class="eco-value" id="eco-val-co2">0 g</span>
+      <div class="eco-row">
+        <span class="eco-row-icon" id="eco-icon-co2">☁️</span>
+        <span class="eco-row-val" id="eco-val-co2">0 g</span>
       </div>
       <div id="eco-tracker-footer">
-        <span id="eco-msg-count">0 messages · 0 tokens</span>
+        <span id="eco-msg-count">0 msg · 0 tok</span>
       </div>
     </div>
   `;
   document.body.appendChild(el);
 
-  el.querySelector('#eco-tracker-toggle').addEventListener('click', toggleCollapse);
+  el.querySelector('#eco-mode-btn').addEventListener('click', toggleMode);
   el.querySelector('#eco-tracker-reset').addEventListener('click', resetSession);
+  el.querySelector('#eco-tracker-collapse').addEventListener('click', toggleCollapse);
 
   makeDraggable(el);
   return el;
 }
 
+function toggleMode() {
+  funMode = !funMode;
+  const btn = widgetEl.querySelector('#eco-mode-btn');
+  btn.textContent = funMode ? '# raw' : '✦ fun';
+  btn.classList.toggle('fun-active', funMode);
+  widgetEl.classList.toggle('fun-mode', funMode);
+  updateWidget();
+}
+
 function toggleCollapse() {
   collapsed = !collapsed;
-  const body   = widgetEl.querySelector('#eco-tracker-body');
-  const btn    = widgetEl.querySelector('#eco-tracker-toggle');
+  const body = widgetEl.querySelector('#eco-tracker-body');
+  const btn  = widgetEl.querySelector('#eco-tracker-collapse');
   body.style.display = collapsed ? 'none' : 'block';
   btn.textContent    = collapsed ? '+' : '−';
 }
@@ -146,10 +184,25 @@ function updateWidget() {
   if (!widgetEl) return;
   const imp = calcImpact(session.inputTokens, session.outputTokens);
 
-  widgetEl.querySelector('#eco-val-cost').textContent   = fmtCost(imp.cost);
-  widgetEl.querySelector('#eco-val-energy').textContent = fmtEnergy(imp.energy);
-  widgetEl.querySelector('#eco-val-water').textContent  = fmtWater(imp.water);
-  widgetEl.querySelector('#eco-val-co2').textContent    = fmtCO2(imp.co2);
+  if (funMode) {
+    widgetEl.querySelector('#eco-icon-cost').textContent   = '☕';
+    widgetEl.querySelector('#eco-val-cost').textContent    = fmtFunCost(imp.cost);
+    widgetEl.querySelector('#eco-icon-energy').textContent = '💡';
+    widgetEl.querySelector('#eco-val-energy').textContent  = fmtFunEnergy(imp.energy);
+    widgetEl.querySelector('#eco-icon-water').textContent  = '🍶';
+    widgetEl.querySelector('#eco-val-water').textContent   = fmtFunWater(imp.water);
+    widgetEl.querySelector('#eco-icon-co2').textContent    = '🚗';
+    widgetEl.querySelector('#eco-val-co2').textContent     = fmtFunCO2(imp.co2);
+  } else {
+    widgetEl.querySelector('#eco-icon-cost').textContent   = '💰';
+    widgetEl.querySelector('#eco-val-cost').textContent    = fmtCost(imp.cost);
+    widgetEl.querySelector('#eco-icon-energy').textContent = '⚡';
+    widgetEl.querySelector('#eco-val-energy').textContent  = fmtEnergy(imp.energy);
+    widgetEl.querySelector('#eco-icon-water').textContent  = '💧';
+    widgetEl.querySelector('#eco-val-water').textContent   = fmtWater(imp.water);
+    widgetEl.querySelector('#eco-icon-co2').textContent    = '☁️';
+    widgetEl.querySelector('#eco-val-co2').textContent     = fmtCO2(imp.co2);
+  }
 
   const totalTok = session.inputTokens + session.outputTokens;
   widgetEl.querySelector('#eco-msg-count').textContent =
@@ -194,8 +247,6 @@ function makeDraggable(el) {
 }
 
 // ── Selector catalogue ────────────────────────────────────────────────────────
-// Tried in order; first selector that returns nodes wins for that role.
-// Covers multiple claude.ai DOM layouts observed across 2024–2025.
 
 const INPUT_SELECTORS = [
   '[data-testid="human-turn"]',
@@ -225,18 +276,12 @@ function queryAll(selectors) {
 }
 
 // ── Delta-based message tracker ───────────────────────────────────────────────
-//
-// Map<Element, number> — how many tokens we have already counted for each node.
-// On every scan we compute (current − previous) and add only the new tokens.
-// This handles both fully-loaded messages and live-streaming responses with a
-// single, unified code path — no fingerprints, no separate streaming tracker.
 
 const nodeTokens = new Map();
 
 function scan() {
   const inputNodes  = queryAll(INPUT_SELECTORS);
   const outputNodes = queryAll(OUTPUT_SELECTORS);
-
   let changed = false;
 
   function processNodes(nodes, role) {
@@ -244,15 +289,11 @@ function scan() {
       const current = charsToTokens(node.innerText);
       const prev    = nodeTokens.get(node) ?? -1;
       if (current === prev) continue;
-
-      if (prev === -1) {
-        // Brand-new node — count all its tokens and record the message
-        session.messageCount++;
-      }
+      if (prev === -1) session.messageCount++;
       const delta = current - Math.max(prev, 0);
       if (delta > 0) {
-        if (role === 'input')  session.inputTokens  += delta;
-        else                   session.outputTokens += delta;
+        if (role === 'input') session.inputTokens  += delta;
+        else                  session.outputTokens += delta;
         nodeTokens.set(node, current);
         changed = true;
       }
@@ -261,7 +302,6 @@ function scan() {
 
   processNodes(inputNodes,  'input');
   processNodes(outputNodes, 'output');
-
   if (changed) updateWidget();
 }
 
@@ -271,19 +311,15 @@ let scanTimer = null;
 
 function scheduleScan() {
   clearTimeout(scanTimer);
-  // Short debounce so rapid character-by-character streaming batches into one scan
   scanTimer = setTimeout(scan, 200);
 }
 
-// Always watch document.body — more reliable than trying to find <main> early
 const observer = new MutationObserver(scheduleScan);
 
 function startObserving() {
   observer.observe(document.body, { childList: true, subtree: true, characterData: true });
 }
 
-// Periodic backstop: catches any mutations the observer might have missed
-// (e.g. cross-origin iframes, delayed hydration)
 setInterval(scan, 2000);
 
 // ── Init ──────────────────────────────────────────────────────────────────────
@@ -292,7 +328,7 @@ function init() {
   if (document.getElementById('eco-tracker-widget')) return;
   widgetEl = buildWidget();
   startObserving();
-  scan(); // pick up any messages already in the DOM
+  scan();
 }
 
 if (document.readyState === 'loading') {
@@ -302,9 +338,6 @@ if (document.readyState === 'loading') {
 }
 
 // ── SPA navigation handler ────────────────────────────────────────────────────
-// claude.ai is a Next.js SPA — URL changes without a full page reload.
-// On navigation: clear the node-token map so stale element refs are released
-// and any messages in the new conversation are counted fresh.
 
 let lastUrl = location.href;
 new MutationObserver(() => {
@@ -314,6 +347,5 @@ new MutationObserver(() => {
   session.inputTokens  = 0;
   session.outputTokens = 0;
   session.messageCount = 0;
-  // Give the SPA a moment to render the new conversation before scanning
   setTimeout(scan, 500);
 }).observe(document, { subtree: true, childList: true });
