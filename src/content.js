@@ -275,26 +275,53 @@ const OUTPUT_SELECTORS = [
   '[data-message-author-role="assistant"]',
 ];
 
-function queryAll(selectors) {
+// Claude extended-thinking blocks are rendered as collapsed <details> elements.
+// innerText skips hidden content, so we detect the container and apply a fixed
+// token estimate rather than trying to read the occluded text.
+const THINKING_SELECTORS = [
+  '[data-testid="thinking-block"]',
+  '[data-testid*="thinking"]',
+  '[class*="thinking-block"]',
+  'details[class*="think"]',
+];
+const THINKING_TOKEN_ESTIMATE = 1000;
+
+// Scope queries to <main> to exclude sidebar previews, nav labels, etc.
+// Falls back to document if <main> isn't in the DOM yet.
+function conversationRoot() {
+  return document.querySelector('main') ?? document;
+}
+
+// Collect all nodes matching any selector within root, deduplicated.
+// Then strip any node that is a descendant of another matched node —
+// this prevents double-counting innerText when both a wrapper and its
+// child happen to match different selectors (common on ChatGPT).
+function queryAll(selectors, root = conversationRoot()) {
   const seen = new Set();
   const results = [];
   for (const sel of selectors) {
     try {
-      document.querySelectorAll(sel).forEach((n) => {
+      root.querySelectorAll(sel).forEach((n) => {
         if (!seen.has(n)) { seen.add(n); results.push(n); }
       });
     } catch (_) { /* invalid selector — skip */ }
   }
-  return results;
+  // Keep only root-level matches (no node whose ancestor is also in the list)
+  return results.filter(n => !results.some(other => other !== n && other.contains(n)));
 }
 
 // ── Delta-based message tracker ───────────────────────────────────────────────
+//
+// nodeTokens: Map<Element, number> — tokens already counted per node.
+// Used for both conversation turns (via innerText) and thinking blocks
+// (via a fixed estimate). Cleared on session reset and navigation.
 
 const nodeTokens = new Map();
 
 function scan() {
-  const inputNodes  = queryAll(INPUT_SELECTORS);
-  const outputNodes = queryAll(OUTPUT_SELECTORS);
+  const root        = conversationRoot();
+  const inputNodes  = queryAll(INPUT_SELECTORS,  root);
+  const outputNodes = queryAll(OUTPUT_SELECTORS, root);
   let changed = false;
 
   function processNodes(nodes, role) {
@@ -315,6 +342,19 @@ function scan() {
 
   processNodes(inputNodes,  'input');
   processNodes(outputNodes, 'output');
+
+  // Thinking blocks: add a fixed estimate for each newly-seen block.
+  // We reuse nodeTokens so that resetSession() and navigation resets
+  // automatically clear these too.
+  const thinkingNodes = queryAll(THINKING_SELECTORS, root);
+  for (const node of thinkingNodes) {
+    if (!nodeTokens.has(node)) {
+      nodeTokens.set(node, THINKING_TOKEN_ESTIMATE);
+      session.outputTokens += THINKING_TOKEN_ESTIMATE;
+      changed = true;
+    }
+  }
+
   if (changed) updateWidget();
 }
 
@@ -351,14 +391,49 @@ if (document.readyState === 'loading') {
 }
 
 // ── SPA navigation handler ────────────────────────────────────────────────────
+// Both Claude and ChatGPT are SPAs that use history.pushState for navigation.
+// pushState doesn't fire popstate, so we intercept it directly. popstate and
+// hashchange cover back/forward and hash routing. A MutationObserver on <title>
+// acts as a final fallback for frameworks that update the title on each route.
 
-let lastUrl = location.href;
-new MutationObserver(() => {
-  if (location.href === lastUrl) return;
-  lastUrl = location.href;
+let lastUrl      = location.href;
+let lastHostname = location.hostname;
+
+function onNavigate() {
+  const url      = location.href;
+  const hostname = location.hostname;
+
+  // Cross-site navigation (tab reuse across domains) — full reset
+  if (hostname !== lastHostname) {
+    lastHostname = hostname;
+    lastUrl      = url;
+    nodeTokens.clear();
+    session.inputTokens  = 0;
+    session.outputTokens = 0;
+    session.messageCount = 0;
+    setTimeout(scan, 600);
+    return;
+  }
+
+  if (url === lastUrl) return;
+  lastUrl = url;
   nodeTokens.clear();
   session.inputTokens  = 0;
   session.outputTokens = 0;
   session.messageCount = 0;
   setTimeout(scan, 500);
-}).observe(document, { subtree: true, childList: true });
+}
+
+// Intercept history.pushState (fires on every SPA route change)
+const _pushState = history.pushState.bind(history);
+history.pushState = function (...args) {
+  _pushState(...args);
+  onNavigate();
+};
+
+window.addEventListener('popstate',    onNavigate);
+window.addEventListener('hashchange',  onNavigate);
+
+// Title-change fallback for any framework we didn't intercept above
+const titleEl = document.querySelector('title');
+if (titleEl) new MutationObserver(onNavigate).observe(titleEl, { childList: true });
