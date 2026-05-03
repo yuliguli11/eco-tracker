@@ -88,7 +88,7 @@ function fmtCost(usd) {
 // ── Fun formatters ────────────────────────────────────────────────────────────
 // Cost    → ☕ coffees at $5 each
 // Energy  → 💡 minutes a 10W LED was on (0.01 kWh/hr)
-// Water   → 🍶 500 mL bottles
+// Water   → 🥤 500 mL bottles
 // CO₂     → 🚗 miles driven (avg US car: ~404 g CO₂/mile)
 
 function fmtFunCost(usd) {
@@ -112,11 +112,7 @@ function fmtFunWater(mL) {
 
 function fmtFunCO2(g) {
   const miles = g / 404;
-  if (miles < 0.01) {
-    const feet = miles * 5280;
-    return `${feet.toFixed(1)} ft driven`;
-  }
-  return `${miles.toFixed(3)} mi driven`;
+  return `${miles.toFixed(4)} mi driven`;
 }
 
 // ── Widget DOM ────────────────────────────────────────────────────────────────
@@ -200,7 +196,7 @@ function updateWidget() {
     widgetEl.querySelector('#eco-val-cost').textContent    = fmtFunCost(imp.cost);
     widgetEl.querySelector('#eco-icon-energy').textContent = '💡';
     widgetEl.querySelector('#eco-val-energy').textContent  = fmtFunEnergy(imp.energy);
-    widgetEl.querySelector('#eco-icon-water').textContent  = '🍶';
+    widgetEl.querySelector('#eco-icon-water').textContent  = '🥤';
     widgetEl.querySelector('#eco-val-water').textContent   = fmtFunWater(imp.water);
     widgetEl.querySelector('#eco-icon-co2').textContent    = '🚗';
     widgetEl.querySelector('#eco-val-co2').textContent     = fmtFunCO2(imp.co2);
