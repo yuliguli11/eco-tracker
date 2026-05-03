@@ -286,6 +286,19 @@ const THINKING_SELECTORS = [
 ];
 const THINKING_TOKEN_ESTIMATE = 1000;
 
+// File attachments: the actual document content is sent to the API but never
+// rendered in the DOM — only a filename chip is shown. We detect those chips
+// inside human-turn nodes and add a fixed per-file token estimate.
+// ~4 000 tokens ≈ 10 pages of text; a reasonable default for a generic document.
+const ATTACHMENT_SELECTORS = [
+  '[data-testid*="file-attachment"]',
+  '[data-testid*="attachment"]',
+  '[class*="file-attachment"]',
+  '[class*="attachment-chip"]',
+  '[class*="AttachmentChip"]',
+];
+const ATTACHMENT_TOKEN_ESTIMATE = 4000;
+
 // Scope queries to <main> to exclude sidebar previews, nav labels, etc.
 // Falls back to document if <main> isn't in the DOM yet.
 function conversationRoot() {
@@ -343,11 +356,9 @@ function scan() {
   processNodes(inputNodes,  'input');
   processNodes(outputNodes, 'output');
 
-  // Thinking blocks: add a fixed estimate for each newly-seen block.
-  // We reuse nodeTokens so that resetSession() and navigation resets
-  // automatically clear these too.
-  const thinkingNodes = queryAll(THINKING_SELECTORS, root);
-  for (const node of thinkingNodes) {
+  // Thinking blocks: fixed estimate per newly-seen block (hidden text, so
+  // innerText misses it). Stored in nodeTokens so resets clear it.
+  for (const node of queryAll(THINKING_SELECTORS, root)) {
     if (!nodeTokens.has(node)) {
       nodeTokens.set(node, THINKING_TOKEN_ESTIMATE);
       session.outputTokens += THINKING_TOKEN_ESTIMATE;
@@ -355,16 +366,56 @@ function scan() {
     }
   }
 
+  // File attachments: document content is never in the DOM, only a filename
+  // chip inside each human-turn. Scope search to human-turn nodes so we
+  // don't match attachment UI elsewhere on the page.
+  for (const turn of inputNodes) {
+    for (const chip of queryAll(ATTACHMENT_SELECTORS, turn)) {
+      if (!nodeTokens.has(chip)) {
+        nodeTokens.set(chip, ATTACHMENT_TOKEN_ESTIMATE);
+        session.inputTokens += ATTACHMENT_TOKEN_ESTIMATE;
+        changed = true;
+      }
+    }
+  }
+
   if (changed) updateWidget();
 }
 
-// ── MutationObserver ──────────────────────────────────────────────────────────
+// ── MutationObserver + throttle/debounce scheduler ───────────────────────────
+//
+// Pure debounce (old approach) resets the timer on every character mutation,
+// so scan never fires during an active stream — only when it stops.
+//
+// Throttle + debounce: fire a scan when the throttle deadline is reached
+// (at most every THROTTLE_MS during heavy streaming) AND fire a final scan
+// DEBOUNCE_MS after the last mutation settles. This gives live updates
+// throughout a long response without hammering the DOM on every keystroke.
 
-let scanTimer = null;
+const DEBOUNCE_MS = 250;
+const THROTTLE_MS = 400;
+
+let scanTimer    = null;
+let lastScanTime = 0;
 
 function scheduleScan() {
+  const elapsed = Date.now() - lastScanTime;
   clearTimeout(scanTimer);
-  scanTimer = setTimeout(scan, 200);
+
+  if (elapsed >= THROTTLE_MS) {
+    // Throttle threshold reached — scan immediately (also fires on the leading
+    // edge when a new human-turn appears, so input tokens are counted at once)
+    runScan();
+  } else {
+    // Schedule a trailing scan, but no later than the throttle deadline
+    scanTimer = setTimeout(runScan, Math.min(DEBOUNCE_MS, THROTTLE_MS - elapsed));
+  }
+}
+
+function runScan() {
+  lastScanTime = Date.now();
+  scanTimer    = null;
+  scan();
 }
 
 const observer = new MutationObserver(scheduleScan);
@@ -373,7 +424,8 @@ function startObserving() {
   observer.observe(document.body, { childList: true, subtree: true, characterData: true });
 }
 
-setInterval(scan, 2000);
+// Backstop for any edge cases the observer misses (iframes, deferred hydration)
+setInterval(scan, 3000);
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
