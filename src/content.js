@@ -22,7 +22,8 @@ const ENV = {
 // for the most commonly served model on each site.
 const PLATFORM_PRICING = {
   'claude.ai':        { input: 3.00,  output: 15.00 }, // Claude claude-sonnet-4-6
-  'chat.openai.com':  { input: 2.50,  output: 10.00 }, // GPT-4o
+  'chatgpt.com':      { input: 2.50,  output: 10.00 }, // GPT-4o
+  'chat.openai.com':  { input: 2.50,  output: 10.00 }, // GPT-4o (legacy domain)
 };
 
 function getPricing() {

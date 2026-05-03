@@ -6,6 +6,7 @@
   "permissions": ["storage"],
   "host_permissions": [
     "https://claude.ai/*",
+    "https://chatgpt.com/*",
     "https://chat.openai.com/*"
   ],
   "background": {
@@ -15,6 +16,7 @@
     {
       "matches": [
         "https://claude.ai/*",
+        "https://chatgpt.com/*",
         "https://chat.openai.com/*"
       ],
       "js": ["src/content.js"],
