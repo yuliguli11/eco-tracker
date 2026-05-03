@@ -16,9 +16,18 @@ const ENV = {
   energyPerKToken: 0.002,
   waterPerKToken:  10,
   co2PerKToken:    0.47,
-  inputCostPerMToken:  3.00,
-  outputCostPerMToken: 15.00,
 };
+
+// Pricing varies by platform and model. These are per-1M-token approximations
+// for the most commonly served model on each site.
+const PLATFORM_PRICING = {
+  'claude.ai':        { input: 3.00,  output: 15.00 }, // Claude claude-sonnet-4-6
+  'chat.openai.com':  { input: 2.50,  output: 10.00 }, // GPT-4o
+};
+
+function getPricing() {
+  return PLATFORM_PRICING[location.hostname] ?? { input: 3.00, output: 15.00 };
+}
 
 const session = {
   inputTokens:  0,
@@ -40,12 +49,13 @@ function charsToTokens(text) {
 
 function calcImpact(inputTok, outputTok) {
   const totalKTok = (inputTok + outputTok) / 1000;
+  const pricing   = getPricing();
   return {
     energy: totalKTok * ENV.energyPerKToken,
     water:  totalKTok * ENV.waterPerKToken,
     co2:    totalKTok * ENV.co2PerKToken,
-    cost:   (inputTok / 1e6) * ENV.inputCostPerMToken +
-            (outputTok / 1e6) * ENV.outputCostPerMToken,
+    cost:   (inputTok / 1e6) * pricing.input +
+            (outputTok / 1e6) * pricing.output,
   };
 }
 
@@ -249,17 +259,23 @@ function makeDraggable(el) {
 // ── Selector catalogue ────────────────────────────────────────────────────────
 
 const INPUT_SELECTORS = [
+  // Claude
   '[data-testid="human-turn"]',
   '[data-testid="user-message"]',
   '[class*="human-turn"]',
   '[class*="HumanTurn"]',
+  // ChatGPT
+  '[data-message-author-role="user"]',
 ];
 
 const OUTPUT_SELECTORS = [
+  // Claude
   '[data-testid="assistant-turn"]',
   '[data-testid="ai-message"]',
   '[class*="assistant-turn"]',
   '[class*="AssistantTurn"]',
+  // ChatGPT
+  '[data-message-author-role="assistant"]',
 ];
 
 function queryAll(selectors) {
