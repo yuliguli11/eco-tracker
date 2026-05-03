@@ -1,0 +1,134 @@
+/* ── Eco Tracker floating widget ──────────────────────────────────────────── */
+
+#eco-tracker-widget {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 2147483647;
+  width: 220px;
+  background: #0f1a14;
+  border: 1px solid #2a4a32;
+  border-radius: 12px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.45);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  color: #d4edd9;
+  user-select: none;
+  transition: box-shadow 0.2s ease;
+}
+
+#eco-tracker-widget:hover {
+  box-shadow: 0 6px 32px rgba(0, 0, 0, 0.6);
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+
+#eco-tracker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px 8px;
+  cursor: move;
+  border-bottom: 1px solid #1e3326;
+}
+
+#eco-tracker-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: #7ec89a;
+  letter-spacing: 0.02em;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.eco-leaf {
+  font-size: 15px;
+  line-height: 1;
+}
+
+#eco-tracker-controls {
+  display: flex;
+  gap: 4px;
+}
+
+#eco-tracker-controls button {
+  background: none;
+  border: 1px solid #2a4a32;
+  border-radius: 5px;
+  color: #7ec89a;
+  font-size: 14px;
+  line-height: 1;
+  width: 22px;
+  height: 22px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+#eco-tracker-controls button:hover {
+  background: #1e3326;
+  color: #a8e6bc;
+}
+
+/* ── Body ────────────────────────────────────────────────────────────────── */
+
+#eco-tracker-body {
+  padding: 10px 12px 8px;
+}
+
+.eco-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 0;
+  border-bottom: 1px solid #1a2e20;
+}
+
+.eco-row:last-of-type {
+  border-bottom: none;
+}
+
+.eco-icon {
+  font-size: 14px;
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.eco-label {
+  flex: 1;
+  color: #8ba890;
+  font-size: 12px;
+}
+
+.eco-value {
+  font-weight: 600;
+  color: #a8e6bc;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+
+#eco-tracker-footer {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid #1a2e20;
+  text-align: center;
+}
+
+#eco-msg-count {
+  font-size: 10px;
+  color: #4d7a5a;
+  letter-spacing: 0.02em;
+}
+
+/* ── Collapsed state: show only header ───────────────────────────────────── */
+#eco-tracker-widget.collapsed #eco-tracker-body {
+  display: none;
+}

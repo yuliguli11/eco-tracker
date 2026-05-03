@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Eco Tracker</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 300px;
+      background: #0f1a14;
+      color: #d4edd9;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 13px;
+      padding-bottom: 12px;
+    }
+
+    /* ── Header ──────────────────────────────────────────────────────── */
+    .header {
+      background: #112018;
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid #1e3326;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header-logo {
+      font-size: 26px;
+      line-height: 1;
+    }
+
+    .header-text h1 {
+      font-size: 15px;
+      font-weight: 700;
+      color: #7ec89a;
+    }
+
+    .header-text p {
+      font-size: 11px;
+      color: #4d7a5a;
+      margin-top: 2px;
+    }
+
+    /* ── Tab bar ─────────────────────────────────────────────────────── */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid #1e3326;
+    }
+
+    .tab {
+      flex: 1;
+      padding: 9px 0;
+      text-align: center;
+      font-size: 12px;
+      color: #4d7a5a;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    .tab.active {
+      color: #7ec89a;
+      border-bottom-color: #7ec89a;
+    }
+
+    .tab:hover:not(.active) {
+      color: #8ba890;
+    }
+
+    /* ── Panels ──────────────────────────────────────────────────────── */
+    .panel { display: none; padding: 14px 16px 4px; }
+    .panel.active { display: block; }
+
+    /* ── Stat cards ──────────────────────────────────────────────────── */
+    .card-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .card {
+      background: #112018;
+      border: 1px solid #1e3326;
+      border-radius: 8px;
+      padding: 10px 11px;
+    }
+
+    .card-icon { font-size: 16px; margin-bottom: 4px; }
+
+    .card-label {
+      font-size: 10px;
+      color: #4d7a5a;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 3px;
+    }
+
+    .card-value {
+      font-size: 15px;
+      font-weight: 700;
+      color: #a8e6bc;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .card-sub {
+      font-size: 10px;
+      color: #4d7a5a;
+      margin-top: 1px;
+    }
+
+    /* ── Section heading ─────────────────────────────────────────────── */
+    .section-title {
+      font-size: 10px;
+      font-weight: 600;
+      color: #4d7a5a;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin: 12px 0 8px;
+    }
+
+    /* ── Token bar ───────────────────────────────────────────────────── */
+    .token-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .token-label { font-size: 12px; color: #8ba890; }
+
+    .token-bar-wrap {
+      flex: 1;
+      height: 4px;
+      background: #1e3326;
+      border-radius: 2px;
+      margin: 0 10px;
+      overflow: hidden;
+    }
+
+    .token-bar-fill {
+      height: 100%;
+      border-radius: 2px;
+      background: #7ec89a;
+      transition: width 0.3s ease;
+    }
+
+    .token-bar-fill.output { background: #4daa72; }
+
+    .token-val {
+      font-size: 11px;
+      color: #7ec89a;
+      font-variant-numeric: tabular-nums;
+      min-width: 54px;
+      text-align: right;
+    }
+
+    /* ── Equivalents ─────────────────────────────────────────────────── */
+    .equiv-list { list-style: none; }
+
+    .equiv-list li {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 0;
+      border-bottom: 1px solid #1a2e20;
+      font-size: 12px;
+      color: #8ba890;
+    }
+
+    .equiv-list li:last-child { border-bottom: none; }
+    .equiv-icon { font-size: 14px; flex-shrink: 0; }
+
+    /* ── About panel ─────────────────────────────────────────────────── */
+    .about-block {
+      background: #112018;
+      border: 1px solid #1e3326;
+      border-radius: 8px;
+      padding: 11px 12px;
+      margin-bottom: 10px;
+    }
+
+    .about-block h3 {
+      font-size: 12px;
+      color: #7ec89a;
+      margin-bottom: 6px;
+    }
+
+    .about-block p, .about-block li {
+      font-size: 11px;
+      color: #8ba890;
+      line-height: 1.55;
+    }
+
+    .about-block ul { padding-left: 14px; margin-top: 4px; }
+    .about-block li { margin-bottom: 2px; }
+
+    .disclaimer {
+      font-size: 10px;
+      color: #3d5e47;
+      text-align: center;
+      padding: 6px 16px 0;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="header-logo">🌿</div>
+    <div class="header-text">
+      <h1>Eco Tracker</h1>
+      <p>Environmental impact of your Claude usage</p>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" data-panel="session">This Session</div>
+    <div class="tab" data-panel="cumulative">All Time</div>
+    <div class="tab" data-panel="about">About</div>
+  </div>
+
+  <!-- Session panel -->
+  <div class="panel active" id="panel-session">
+    <div class="card-grid">
+      <div class="card">
+        <div class="card-icon">💰</div>
+        <div class="card-label">Cost</div>
+        <div class="card-value" id="s-cost">—</div>
+        <div class="card-sub">USD</div>
+      </div>
+      <div class="card">
+        <div class="card-icon">⚡</div>
+        <div class="card-label">Energy</div>
+        <div class="card-value" id="s-energy">—</div>
+        <div class="card-sub" id="s-energy-sub"></div>
+      </div>
+      <div class="card">
+        <div class="card-icon">💧</div>
+        <div class="card-label">Water</div>
+        <div class="card-value" id="s-water">—</div>
+        <div class="card-sub" id="s-water-sub"></div>
+      </div>
+      <div class="card">
+        <div class="card-icon">☁️</div>
+        <div class="card-label">CO₂</div>
+        <div class="card-value" id="s-co2">—</div>
+        <div class="card-sub" id="s-co2-sub"></div>
+      </div>
+    </div>
+
+    <div class="section-title">Token Usage</div>
+    <div class="token-row">
+      <span class="token-label">Input</span>
+      <div class="token-bar-wrap"><div class="token-bar-fill" id="s-bar-input" style="width:0%"></div></div>
+      <span class="token-val" id="s-tok-input">0</span>
+    </div>
+    <div class="token-row">
+      <span class="token-label">Output</span>
+      <div class="token-bar-wrap"><div class="token-bar-fill output" id="s-bar-output" style="width:0%"></div></div>
+      <span class="token-val" id="s-tok-output">0</span>
+    </div>
+
+    <div class="section-title">Real-world equivalents</div>
+    <ul class="equiv-list" id="s-equivs"></ul>
+  </div>
+
+  <!-- Cumulative panel -->
+  <div class="panel" id="panel-cumulative">
+    <div class="card-grid">
+      <div class="card">
+        <div class="card-icon">💰</div>
+        <div class="card-label">Total Cost</div>
+        <div class="card-value" id="c-cost">—</div>
+        <div class="card-sub">USD</div>
+      </div>
+      <div class="card">
+        <div class="card-icon">⚡</div>
+        <div class="card-label">Total Energy</div>
+        <div class="card-value" id="c-energy">—</div>
+        <div class="card-sub" id="c-energy-sub"></div>
+      </div>
+      <div class="card">
+        <div class="card-icon">💧</div>
+        <div class="card-label">Total Water</div>
+        <div class="card-value" id="c-water">—</div>
+        <div class="card-sub" id="c-water-sub"></div>
+      </div>
+      <div class="card">
+        <div class="card-icon">☁️</div>
+        <div class="card-label">Total CO₂</div>
+        <div class="card-value" id="c-co2">—</div>
+        <div class="card-sub" id="c-co2-sub"></div>
+      </div>
+    </div>
+
+    <div class="section-title">Real-world equivalents</div>
+    <ul class="equiv-list" id="c-equivs"></ul>
+  </div>
+
+  <!-- About panel -->
+  <div class="panel" id="panel-about">
+    <div class="about-block">
+      <h3>How we estimate impact</h3>
+      <p>Eco Tracker counts tokens from your conversations and applies published LLM inference energy benchmarks:</p>
+      <ul>
+        <li><strong>Energy:</strong> ~0.002 kWh / 1K tokens</li>
+        <li><strong>Water:</strong> ~10 mL / 1K tokens (cooling)</li>
+        <li><strong>CO₂:</strong> ~0.47 g / 1K tokens (US grid avg)</li>
+        <li><strong>Token cost:</strong> ~4 characters = 1 token</li>
+      </ul>
+    </div>
+    <div class="about-block">
+      <h3>Sources</h3>
+      <p>Estimates are based on:</p>
+      <ul>
+        <li>Li et al. (2023) — "Making AI Less Thirsty"</li>
+        <li>Patterson et al. (2022) — "Carbon Footprint of ML"</li>
+        <li>IEA Electricity CO₂ intensity (US average 2023)</li>
+      </ul>
+    </div>
+  </div>
+
+  <p class="disclaimer">Estimates only. Actual values vary by data centre, model, and region.</p>
+
+  <script src="popup.js"></script>
+</body>
+</html>
